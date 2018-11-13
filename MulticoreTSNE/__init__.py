@@ -46,6 +46,14 @@ class MulticoreTSNE:
     the default values of 250/1000 may need to be increased when embedding large numbers
     of observations. Properly setting `learning_rate` results in good embeddings with fewer 
     iterations. This interplay is discussed at https://doi.org/10.1101/451690.
+
+    Parameter `auto_iter`, when set to true, causes the algorithm to ignore the `n_iter`
+    and `n_iter_early_exag` parameters, and instead determine them dynamically. See readme
+    for details.
+
+    Parameter `auto_iter_end` is the constant used to stop run when (KLDn-1 – KLDn) < KLDn/X
+    where X is this arg. Only used when `auto_iter` is true. 
+
     """
     def __init__(self,
                  n_components=2,
@@ -63,7 +71,9 @@ class MulticoreTSNE:
                  method='barnes_hut',
                  angle=0.5,
                  n_jobs=1,
-                 cheat_metric=True):
+                 cheat_metric=True,
+                 auto_iter=False,
+                 auto_iter_end=5000):
         self.n_components = n_components
         self.angle = angle
         self.perplexity = perplexity
@@ -79,6 +89,8 @@ class MulticoreTSNE:
         self.kl_divergence_ = None
         self.verbose = int(verbose)
         self.cheat_metric = cheat_metric
+        self.auto_iter = auto_iter
+        self.auto_iter_end = auto_iter_end
         assert isinstance(init, np.ndarray) or init == 'random', "init must be 'random' or array"
         if isinstance(init, np.ndarray):
             assert init.ndim == 2, "init array must be 2D"
@@ -92,7 +104,7 @@ class MulticoreTSNE:
                                     int num_threads, int max_iter, int n_iter_early_exag,
                                     int random_state, bool init_from_Y, int verbose,
                                     double early_exaggeration, double learning_rate,
-                                    double *final_error, int distance);""")
+                                    double *final_error, int distance, bool auto_iter, double auto_iter_end);""")
 
         path = os.path.dirname(os.path.realpath(__file__))
         try:
@@ -109,7 +121,6 @@ class MulticoreTSNE:
     def fit_transform(self, X, _y=None):
 
         assert X.ndim == 2, 'X should be 2D array.'
-
         # X may be modified, make a copy
         X = np.array(X, dtype=float, order='C', copy=True)
 
@@ -131,7 +142,7 @@ class MulticoreTSNE:
                        cffi_Y, self.n_components,
                        self.perplexity, self.angle, self.n_jobs, self.n_iter, self.n_iter_early_exag,
                        self.random_state, init_from_Y, self.verbose, self.early_exaggeration,
-                       self.learning_rate, cffi_final_error, int(self.cheat_metric))
+                       self.learning_rate, cffi_final_error, int(self.cheat_metric), self.auto_iter, self.auto_iter_end)
         t.daemon = True
         t.start()
 
