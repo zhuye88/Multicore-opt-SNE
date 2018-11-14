@@ -1,150 +1,109 @@
-# Multicore t-SNE [![Build Status](https://travis-ci.org/DmitryUlyanov/Multicore-TSNE.svg?branch=master)](https://travis-ci.org/DmitryUlyanov/Multicore-TSNE)
+# opt-SNE
+opt-SNE is a variant of t-SNE designed to produce high-quality embeddings in the optimal amount of compute time without having to empirically tune algorithm parameters. For thorough background and discussion on this work, please read [the paper](https://doi.org/10.1101/451690).
 
-This is a multicore modification of [Barnes-Hut t-SNE](https://github.com/lvdmaaten/bhtsne) by L. Van der Maaten with python and Torch CFFI-based wrappers. This code also works **faster than sklearn.TSNE** on 1 core.
+This repository contains a c++ implementation with a Python wrapper.
 
-<center><img src="mnist-tsne.png" width="512"></center>
+Need help getting this code running? [Contact Omiq](https://omiq.ai/#contact).
 
-# What to expect
+# What is the Benefit?
+We generally realize a 2-5x decrease in time to result using this methodology, and can analyze datasets with numbers of observations that were previously prohibitively large. There is also the added benefit and time savings of getting the result right the first time, thus preventing the scenario of having to do additional runs to get the settings correct if the initial run failed to produce a good embedding.
 
-Barnes-Hut t-SNE is done in two steps.
+Its benefit is seen especially with larger datasets that often produce inaccurate embeddings and/or take excessive amounts of time to compute, especially when empirically searching the parameter space. However, t-SNE runs of all sizes can benefit from completing sooner using this methodology.
 
-- First step: an efficient data structure for nearest neighbours search is built and used to compute probabilities. This can be done in parallel for each point in the dataset, this is why we can expect a good speed-up by using more cores.
+# How Does opt-SNE Work?
+opt-SNE automates the selection of three important parameters for the t-SNE run:
+1) learning rate
+2) number of iterations spent in early exaggeration
+3) number of total iterations.
 
-- Second step: the embedding is optimized using gradient descent. This part is essentially consecutive so we can only optimize within iteration. In fact some parts can be parallelized effectively, but not all of them a parallelized for now. That is why second step speed-up will not be that significant as first step sepeed-up but there is still room for improvement.
+Learning rate is calculated before the run begins using a formula. The number of iterations for early exaggeration and the run itself are determined in real time as the run progresses by monitoring the Kullback-Leibler divergence (KLD). More details are given directly below.
 
-So when can you benefit from parallelization? It is almost true, that the second step computation time is constant of `D` and depends mostly on `N`. The first part's time depends on `D` a lot, so for small `D` `time(Step 1) << time(Step 2)`, for large `D` `time(Step 1) >> time(Step 2)`. As we are only good at parallelizing step 1 we will benefit most when `D` is large enough (MNIST's `D = 784` is large, `D = 10` even for `N=1000000` is not so much). I wrote multicore modification originally for [Springleaf competition](https://www.kaggle.com/c/springleaf-marketing-response), where my data table was about `300000 x 3000` and only several days left till the end of the competition so any speed-up was handy.
+The algorithm works in this fashion:
+- First calculate the optimal learning rate based on the number of observations (aka "cells", "samples") in the dataset. The value is given by the number of observations divided by the early exaggeration factor, which in most implementations is 12 by default. It may be exposed as an argument, such as in this package with the `early_exaggeration` argument.
+- As the run progresses the Kullback-Leibler divergence (KLD) is monitored. The difference and rate of change percentage are calculated for readings between iterations.
+- By monitoring KLD rate of change (KLDRC), a local maximum can be detected. When this maximum is reached, the run switches out of early exaggeration.
+- After early exaggeration the KLD difference is used to stop the run. This happens when the difference from one iteration to the next is less than the current KLD divided by a constant which can be overridden by the user. The larger this constant is, the longer the run will go before stopping.
 
-# Benchmark
+In our experience, tweaking the other arguments to t-SNE (at least in context of single-cell data), doesn't meaningfully change results and is more a matter of taste for impacting how certain characteristics of the final embedding appear. We have seen that reasonable modifications to other parameters such as `perplexity` and `early_exaggeration` factor don't impact the opt-SNE methodology. We haven't tested `theta`, but we generally advise not modifying this parameter (at least for single-cell data).
 
-### 1 core
+# Installation
+## Mac OSX
+These directions assume little to no experience with programming or environment/dependency management.
+- Download this repo to a local folder.
+- Open the Terminal app.
+- Install [Homebrew](https://brew.sh/) using the directions on their website.
+- Use Homebrew to install cmake. The command to enter in Terminal is `brew install cmake`.
+- Use Homebrew to install python 2.x. The command is `brew install python@2`.
+- Use Homebrew to install GCC version 8. The command is `brew install gcc@8`.
+- Set the working directory in Terminal to the folder you downloaded locally in the first step. Don't know how to do that? type the letters `cd ` (with a space afterwards) and then drag the folder into the terminal. Its path should appear. Submit the command and then the current directory of Terminal should be set to the correct folder. Typing `pwd` should indicate being inside the directory and `ls` should show the files present inside it.
+- Enter the command `pip2 install matplotlib` to install this dependency that is only necessary for running `test.py` below.
+- Enter the command `pip2 install .` to install this package.
+- Enter the command `python2 MulticoreTSNE/examples/test.py --n_threads 2`
+  - After submitting this command, a statement should be printed that indicates how many cores are available on your machine and how many are being used by the algorithm. If the number is not 2, then the installation is not correctly configured for parallel processing. This won't affect results but will affect speed, assuming your computer has more than one CPU core.
 
-Interestingly, that this code beats other implementations. We compare to `sklearn` (Barnes-Hut of course), L. Van der Maaten's [bhtsne](https://github.com/lvdmaaten/bhtsne), [py_bh_tsne repo](https://github.com/danielfrg/tsne) (cython wrapper for bhtsne with QuadTree). `perplexity = 30, theta=0.5` for every run. In fact [py_bh_tsne repo](https://github.com/danielfrg/tsne) works at the same speed as this code when using more optimization flags for compiler.
+# Usage
+A script `run_optsne.py` is included that allows this package to be run from the command line on any CSV file. Alternatively, it can be imported as a Python module to run on any matrix data as desired.
 
-This is a benchmark for `70000x784` MNIST data:
+## Mac OSX Terminal
+- Follow the directions above to install the package.
+- If not already done per above, open the Terminal app and set the working directory to this repo.
+- Run with the command `python2 MulticoreTSNE/run/run_optsne.py --optsne --data <path_to_data>`. This is the minimal command necessary to run opt-SNE with all default parameters. Replace `<path_to_data>` with the filepath to a CSV file. Additional parameters can be specified to override defaults (see Arguments section below).
 
-| Method                       | Step 1 (sec)   | Step 2 (sec)  |
-| ---------------------------- |:---------------:| --------------:|
-| MulticoreTSNE(n_jobs=1)      | **912**         | **350**        |
-| bhtsne                       | 4257            | 1233           |
-| py_bh_tsne                   | 1232            | 367            |
-| sklearn(0.18)                | ~5400           | ~20920         |
+## CSV Formatting Requirements
+- The file must have one line of buffer (usually used for column names, but it doesn't matter what is in this line of the file).
+- Only the columns desired for analysis should be present in the file. There is no filtering mechanism for columns.
+- For an example, see **bendall20k-data.csv** in this repo.
+- Note to single-cell data users: make sure the data are properly scaled/compensated/normalized/etc as relevant before use.
 
-I did my best to find what is wrong with sklearn numbers, but it is the best benchmark I could do (you can find test script in `python/tests` folder).
+## Arguments
+### Public Arguments
+Add these flags followed directly by values to run_optsne.py to modify algorithm behavior. E.g., `python2 MulticoreTSNE/run/run_optsne.py --optsne --data bendall20k-data.csv --n_threads 4 --perp 50 --n_obs 5000 --verbose 20`. These flags describe arguments to the command line script only. They generally map to the python package itself but some have slightly different names.
+- `--data` is the filepath to the data CSV file to be run through the algorithm.
+- `--n_threads` is the number of CPU threads to use.
+- `--learning_rate` is the learning rate (aka "eta"). This is set automatically of running in opt-SNE mode but can be overridden if given as an argument.
+- `--n_iter_early_exag` is the number of iterations out of total to spend in early exaggeration. If running in opt-SNE mode this argument is ignored.
+- `--n_iter` is the total number of iterations. If running in opt-SNE mode this argument is used to stop the run if opt-SNE has not already done so by this point.
+- `--perp` is perplexity.
+- `--theta` is theta (aka "angle").
+- `--optsne` is a flag with no accompanying value. If this flag if present, t-SNE will run in opt-SNE mode. If not present, it runs in normal t-SNE mode.
+- `--optsne_end` is the constant used to stop the run. See discussion above about how opt-SNE functions for more discussion.
+- `--early_exaggeration` is the early exaggeration factor.
+- `--n_obs` is the number of observations (datapoints) to use from the data file if not the whole set.
+- `--seed` is the pseudorandom seed value in order to control consistency of results between runs as desired.
+- `--verbose` is the frequency in iterations to print algorithm progress. Pass 0 to have no printed output, 1 for every iteration, 25 for every 25 iterations, etc.
 
-### Multicore
+### Private Arguments
+There are also a number of tuneable parameters that are currently hard-coded. Their values can be edited with the **tsne.cpp** file. They will take effect after reinstalling the package following the edits.
+- `auto_iter_buffer_ee` is the number of iterations to wait before starting to monitor KLDRC for stopping early exaggeration.
+- `auto_iter_buffer_run` is the number of iterations to wait before starting to monitor KLD for stopping the run after early exaggeration.
+- `auto_iter_pollrate_ee` is how frequently in iterations the KLD should be calculated for purposes of switching out of early exaggeration.
+- `auto_iter_pollrate_run` is how frequently in iterations the KLD should be calculated for purposes of ending the run.
+- `auto_iter_ee_switch_buffer` is the number of iterations times the `auto_iter_pollrate_ee` to wait after detecting KLDRC switchpoint to actually make the switch out of EE.
 
-This table shows a relative to 1 core speed-up when using `n` cores.
+# Does opt-SNE Work for My Data?
+This methodology is general and should work broadly, however, it has been most closely characterized with single-cell data types such as flow cytometry, mass cytometry, and scRNA-seq.
 
-| n_jobs        | Step 1    | Step 2   |
-| ------------- |:---------:| --------:|
-| 1             | 1x        | 1x       |
-| 2             | 1.54x     | 1.05x    |
-| 4             | 2.6x      | 1.2x     |
-| 8             | 5.6x      | 1.65x    |
+# Code Origination and Discussion
+This package is forked from Dmitry Ulyanov's [Multicore t-SNE](https://github.com/DmitryUlyanov/Multicore-TSNE) which itself is a multicore modification of [Barnes-Hut t-SNE](https://github.com/lvdmaaten/bhtsne) by L. Van der Maaten.
 
-# How to use
+Multicore t-SNE was chosen as the base for this package due to its speed. See the original repository for information on benchmarks.
 
-Python and torch wrappers are available.
+Note that there is an edit to the CMakeLists.txt file that was made for compatibility with Mac OSX. Other environments may require backing this edit out or otherwise augmenting this file.
 
-## Python
-### Install
+It should be noted that the behavior of KLDRC is markedly different between Barnes-Hut t-SNE and Multicore t-SNE. Specifically, early oscillations in KLDRC are much more dramatic in Multicore t-SNE, whereas they are barely detectible in Barnes-Hut t-SNE. What code difference between the packages specifically accounts for this difference is currently unclear, but it doesn't seem to materially impact results nor the applicability of the opt-SNE methodology. It's referenced here simply as a note to the astute reader who notices that KLDRC graphs produced from this package do not match those reported in the paper, since the paper was written using the Barnes-Hut implementation.
 
-#### Directly from pypi
-`pip install MulticoreTSNE`
-
-#### From source
-
-Make sure `cmake` is installed on your system, and you will also need a sensible C++ compiler, such as `gcc` or `llvm-clang`. On macOS, you can get both via [homebrew](https://brew.sh/).
-
-To install the package, please do:
-```
-git clone https://github.com/DmitryUlyanov/Multicore-TSNE.git
-cd Multicore-TSNE/
-pip install .
-```
-
-Tested with both Python 2.7 and 3.6 (conda) and Ubuntu 14.04.
-
-### Run
-
-You can use it as a near drop-in replacement for [sklearn.manifold.TSNE](http://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html).
-
-```
-from MulticoreTSNE import MulticoreTSNE as TSNE
-
-tsne = TSNE(n_jobs=4)
-Y = tsne.fit_transform(X)
-```
-
-Please refer to [sklearn TSNE manual](http://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html) for parameters explanation.
-
-This implementation `n_components=2`, which is the most common case (use [Barnes-Hut t-SNE](https://github.com/lvdmaaten/bhtsne) or sklearn otherwise). Also note that some parameters are there just for the sake of compatibility with sklearn and are otherwise ignored. See `MulticoreTSNE` class docstring for more info.
-
-#### MNIST example
-```
-from sklearn.datasets import load_digits
-from MulticoreTSNE import MulticoreTSNE as TSNE
-from matplotlib import pyplot as plt
-
-digits = load_digits()
-embeddings = TSNE(n_jobs=4).fit_transform(digits.data)
-vis_x = embeddings[:, 0]
-vis_y = embeddings[:, 1]
-plt.scatter(vis_x, vis_y, c=digits.target, cmap=plt.cm.get_cmap("jet", 10), marker='.')
-plt.colorbar(ticks=range(10))
-plt.clim(-0.5, 9.5)
-plt.show()
-```
-
-### Test
-
-You can test it on MNIST dataset with the following command:
-
-```
-python MulticoreTSNE/examples/test.py <n_jobs>
-```
-
-#### Note on jupyter use
-To make the computation log visible in jupyter please install `wurlitzer` (`pip install wurlitzer`) and execute this line in any cell beforehand:
-```
-%load_ext wurlitzer
-```
-Memory leakages are possible if you interrupt the process. Should be OK if you let it run until the end.
-
-## Torch
-
-To install execute the following command from repository folder:
-```
-luarocks make torch/tsne-1.0-0.rockspec
-```
-or
-
-```
-luarocks install https://raw.githubusercontent.com/DmitryUlyanov/Multicore-TSNE/master/torch/tsne-1.0-0.rockspec
-```
-
-You can run t-SNE like that:
-```
-tsne = require 'tsne'
-
-Y = tsne(X, n_components, perplexity, n_iter, angle, n_jobs)
-```
-
-`torch.DoubleTensor` type only supported for now.
+At such a time that this methodology gains acceptance more generally it can be integrated into the canonical t-SNE implementations and this fork can be deprecated.
 
 # License
-
 Inherited from [original repo's license](https://github.com/lvdmaaten/bhtsne).
 
-# Future work
-
-- Allow other types than double
-- Improve step 2 performance (possible)
+# Future Work
+- It could make sense to take a more functional approach to the criteria for early exaggeration switch and stopping the run in case different logic is desired without having to fork new versions of this package.
 
 # Citation
+For the opt-SNE methodology, refer to [the opt-SNE paper](https://doi.org/10.1101/451690).
 
-Please cite this repository if it was useful for your research:
-
+For Multicore-TSNE:
 ```
 @misc{Ulyanov2016,
   author = {Ulyanov, Dmitry},
