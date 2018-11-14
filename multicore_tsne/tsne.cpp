@@ -46,7 +46,7 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
                int num_threads, int max_iter, int n_iter_early_exag,
                int random_state, bool init_from_Y, int verbose,
                double early_exaggeration, double learning_rate,
-               double *final_error) {
+               double *final_error, bool auto_iter, double auto_iter_end) {
 
     if (N - 1 < 3 * perplexity) {
         perplexity = (N - 1) / 3;
@@ -67,15 +67,27 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
         ======================
     */
 
-    if (verbose)
-        fprintf(stderr, "Using no_dims = %d, perplexity = %f, and theta = %f\n", no_dims, perplexity, theta);
 
     // Set learning parameters
-    float total_time = .0;
-    time_t start, end;
-    int stop_lying_iter = n_iter_early_exag, mom_switch_iter = n_iter_early_exag;
+    int total_time = 0;
+    time_t start, end, start_incr, end_incr;
     double momentum = .5, final_momentum = .8;
     double eta = learning_rate;
+    // overrides if necessary
+    if (auto_iter) {
+        double suggested_eta = N / early_exaggeration;
+        if (eta < suggested_eta*.95 || eta > suggested_eta * 1.05) {
+            fprintf(stderr, "========\nWARNING: The suggested learning rate for optsne mode is %d. Provided override value of %f"
+                             " might not give expected results in optsne mode.\n========\n", int(suggested_eta), learning_rate);
+        }
+        n_iter_early_exag = max_iter;
+    }
+    int stop_lying_iter = n_iter_early_exag, mom_switch_iter = n_iter_early_exag;
+
+    if (verbose)
+        fprintf(stdout, "Using no_dims = %d, perplexity = %f, theta = %f, eta = %f, seed = %d,"
+                       " num samples = %d, num features = %d, max iters = %d, optsne mode = %s, optsne stop: %.1f\n",
+                       no_dims, perplexity, theta, learning_rate, random_state, N, D, max_iter, auto_iter ? "true" : "false", auto_iter ? auto_iter_end : 0);
 
     // Allocate some memory
     double* dY    = (double*) malloc(N * no_dims * sizeof(double));
@@ -88,7 +100,7 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
 
     // Normalize input data (to prevent numerical problems)
     if (verbose)
-        fprintf(stderr, "Computing input similarities...\n");
+        fprintf(stdout, "Computing input similarities...\n");
 
     start = time(0);
     zeroMean(X, N, D);
@@ -118,7 +130,7 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
 
     end = time(0);
     if (verbose)
-        fprintf(stderr, "Done in %4.2f seconds (sparsity = %f)!\nLearning embedding...\n", (float)(end - start) , (double) row_P[N] / ((double) N * (double) N));
+        fprintf(stdout, "Done in %4.2f seconds (sparsity = %f)!\nLearning embedding...\n", (float)(end - start) , (double) row_P[N] / ((double) N * (double) N));
 
     /* 
         ======================
@@ -132,11 +144,8 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
         val_P[i] *= early_exaggeration;
     }
 
-    // Initialize solution (randomly), unless Y is already initialized
-    if (init_from_Y) {
-        stop_lying_iter = 0;  // Immediately stop lying. Passed Y is close to the true solution.
-    }
-    else {
+    // Initialize solution (randomly)
+    if (!init_from_Y) {
         if (random_state != -1) {
             srand(random_state);
         }
@@ -147,12 +156,55 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
 
     // Perform main training loop
     start = time(0);
+    start_incr = time(0);
+    double error_prev = MAXFLOAT; // to store previous iteration error value in auto_iter mode
+    double error_rc_prev; // to store previous iteration's error rate of change in auto_iter mode
+    int auto_iter_buffer_ee = 15;  // number of iters to wait before starting to monitor KLDRC for stopping EE
+    int auto_iter_buffer_run = 15; // number of iters to wait before starting to monitor KLDRC for stopping run
+    int auto_iter_pollrate_ee = 3; // Poll KLD for early exaggeration switch every N iteration(s)
+    int auto_iter_pollrate_run = 5; // After EE, poll KLD for stopping run every N iteration(s)
+    // number of iters * pollrate_ee to wait after detecting KLDRC switchpoint to make switch out of EE
+    int auto_iter_ee_switch_buffer = 2;
+    int error_report_rate = verbose; // If verbose, report KLD every N iteration(s)
     for (int iter = 0; iter < max_iter; iter++) {
 
-        bool need_eval_error = (verbose && ((iter > 0 && iter % 50 == 0) || (iter == max_iter - 1)));
-
+        bool need_eval_error_algo, need_eval_error_verbose = false;
+        if (verbose && ((iter % error_report_rate == 0) || (iter == max_iter - 1)))
+            need_eval_error_verbose = true;
+        if (auto_iter) {
+            if (iter < stop_lying_iter)
+                need_eval_error_algo = iter % auto_iter_pollrate_ee == 0;
+            else
+                need_eval_error_algo = iter % auto_iter_pollrate_run == 0;
+        }
+            
         // Compute approximate gradient
-        double error = computeGradient(row_P, col_P, val_P, Y, N, no_dims, dY, theta, need_eval_error);
+        double error = computeGradient(row_P, col_P, val_P, Y, N, no_dims, dY, theta, (need_eval_error_verbose || need_eval_error_algo) );
+        double error_diff = error_prev - error;
+        double error_rc = 100*(error_prev - error) / error_prev;
+        // if in auto_iter mode, determine if need to switch out of EE or stop run
+        if (auto_iter && need_eval_error_algo) {
+            if (iter < stop_lying_iter) { // if in EE phase
+                if (error_rc < error_rc_prev && iter > auto_iter_buffer_ee) {
+                    if (auto_iter_ee_switch_buffer < 1) {
+                        stop_lying_iter = iter;
+                        mom_switch_iter = iter;
+                        n_iter_early_exag = iter;
+                    }
+                    auto_iter_ee_switch_buffer--;
+                }
+            }
+            else { // else already out of EE phase and now objective is to stop run
+                if (abs_d(error_diff)/auto_iter_pollrate_run < error/auto_iter_end && iter > stop_lying_iter + auto_iter_buffer_run) {
+                    max_iter = iter;
+                }
+            }
+        }
+
+        if (need_eval_error_algo) {
+            error_prev = error;
+            error_rc_prev = error_rc;
+        }
 
         for (int i = 0; i < N * no_dims; i++) {
             // Update gains
@@ -177,20 +229,21 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
         }
 
         // Print out progress
-        if (need_eval_error) {
-            end = time(0);
-
-            if (iter == 0)
-                fprintf(stderr, "Iteration %d: error is %f\n", iter + 1, error);
-            else {
-                total_time += (float) (end - start);
-                fprintf(stderr, "Iteration %d: error is %f (50 iterations in %4.2f seconds)\n", iter + 1, error, (float) (end - start) );
+        if (verbose) {
+            if (need_eval_error_verbose) {
+                end = time(0);
+                if (auto_iter)
+                    fprintf(stdout, "Iter: %4d, Error: %10.6f, time(sec): %4d, total_time(sec): %5d\n",
+                    iter+1, error, (int)(end-start_incr), (int)(end-start) );
+                else
+                    fprintf(stdout, "Iter: %4d, Error: %10.6f, time(sec): %4d, total_time(sec): %5d\n",
+                    iter+1, error, (int)(end-start_incr), (int)(end-start) );
+                start_incr = time(0);
             }
-            start = time(0);
         }
-
     }
-    end = time(0); total_time += (float) (end - start) ;
+    end = time(0);
+    total_time = (int) (end - start);
 
     if (final_error != NULL)
         *final_error = evaluateError(row_P, col_P, val_P, Y, N, no_dims, theta);
@@ -205,7 +258,10 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
     free(val_P); val_P = NULL;
 
     if (verbose)
-        fprintf(stderr, "Fitting performed in %4.2f seconds.\n", total_time);
+        fprintf(stdout, "INFO: Done in %d sec with final error %f\n"
+                         "INFO: Did %d total iterations with %d as early exaggeration\n",
+                        (int)(end-start), *final_error, max_iter, n_iter_early_exag);
+
 }
 
 // Compute gradient of the t-SNE cost function (using Barnes-Hut algorithm)
@@ -604,19 +660,19 @@ extern "C"
                                 int num_threads = 1, int max_iter = 1000, int n_iter_early_exag = 250,
                                 int random_state = -1, bool init_from_Y = false, int verbose = 0,
                                 double early_exaggeration = 12, double learning_rate = 200,
-                                double *final_error = NULL, int distance = 1)
+                                double *final_error = NULL, int distance = 1, bool auto_iter = false, double auto_iter_end = 0.02)
     {
         if (verbose)
             fprintf(stderr, "Performing t-SNE using %d cores.\n", NUM_THREADS(num_threads));
         if (distance == 0) {
             TSNE<SplitTree, euclidean_distance> tsne;
             tsne.run(X, N, D, Y, no_dims, perplexity, theta, num_threads, max_iter, n_iter_early_exag,
-                     random_state, init_from_Y, verbose, early_exaggeration, learning_rate, final_error);
+                     random_state, init_from_Y, verbose, early_exaggeration, learning_rate, final_error, auto_iter, auto_iter_end);
         }
         else {
             TSNE<SplitTree, euclidean_distance_squared> tsne;
             tsne.run(X, N, D, Y, no_dims, perplexity, theta, num_threads, max_iter, n_iter_early_exag,
-                     random_state, init_from_Y, verbose, early_exaggeration, learning_rate, final_error);
+                     random_state, init_from_Y, verbose, early_exaggeration, learning_rate, final_error, auto_iter, auto_iter_end);
         }
     }
 }

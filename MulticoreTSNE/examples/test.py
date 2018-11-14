@@ -1,86 +1,65 @@
-import gzip
-import pickle
 import numpy as np
-import matplotlib
-from cycler import cycler
-import urllib
 import os
-import sys
 from MulticoreTSNE import MulticoreTSNE as TSNE
-
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import multiprocessing
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--n_jobs", help='Number of threads', default=1, type=int)
-parser.add_argument("--n_objects", help='How many objects to use from MNIST', default=-1, type=int)
-parser.add_argument("--n_components", help='T-SNE dimensionality', default=2, type=int)
+parser.add_argument("--n_threads", help='Number of threads', default=1, type=int)
+parser.add_argument("--n_obs", help='How many observations (datapoints) to use', default=-1, type=int)
 args = parser.parse_args()
 
-def get_mnist():
+def parse_csv(filepath):
+    if not os.path.exists(filepath):
+        raise RuntimeError("Cannot find file at " + filepath)
+    mat = np.loadtxt(filepath, delimiter=',', skiprows=1)
+    return mat
 
-    if not os.path.exists('mnist.pkl.gz'):
-        print('downloading MNIST')
-        if sys.version_info >= (3, 0):
-            urllib.request.urlretrieve(
-            'http://deeplearning.net/data/mnist/mnist.pkl.gz', 'mnist.pkl.gz')
-        else:
-            urllib.urlretrieve(
-                        'http://deeplearning.net/data/mnist/mnist.pkl.gz', 'mnist.pkl.gz')
-        print('downloaded')
+def plot(mat, colors):
+    # labels = set(colors)
+    colorsmat = colors.reshape((len(colors), -1)) # turns array into column
+    matwithcolors = np.hstack((mat, colorsmat)) # append columnf
+    returns = []
+    cmap = cm.get_cmap('gist_ncar')
+    uniques = np.unique(colors)
+    index = 0
+    for n in uniques:
+        subset = matwithcolors[matwithcolors[:,2] == n] # rows where file index equals N
+        cindex = float(index)/float(len(uniques))
+        color = cmap( cindex )
+        returns.append(plt.scatter(subset[:,0], subset[:,1], c=color, s=1))
+        index+=1
 
-    f = gzip.open("mnist.pkl.gz", "rb")
-    if sys.version_info >= (3, 0):
-        train, val, test = pickle.load(f, encoding='latin1')
-    else:
-        train, val, test = pickle.load(f)
-    f.close()
+    filename = "tsne_test.png"
 
-    # Get all data in one array
-    _train = np.asarray(train[0], dtype=np.float64)
-    _val = np.asarray(val[0], dtype=np.float64)
-    _test = np.asarray(test[0], dtype=np.float64)
-    mnist = np.vstack((_train, _val, _test))
+    lgnd = plt.legend(returns,
+           np.unique(colors),
+           scatterpoints=1,
+           bbox_to_anchor=(1,1),
+           ncol=1,
+           fontsize=8)
+    for x in lgnd.legendHandles:
+        x._sizes = [30]
 
-    # Also the classes, for labels in the plot later
-    classes = np.hstack((train[1], val[1], test[1]))
 
-    return mnist, classes
-
-def plot(Y, classes, name):
-    digits = set(classes)
-    fig = plt.figure()
-    colormap = plt.cm.spectral
-    plt.gca().set_prop_cycle(
-        cycler('color', [colormap(i) for i in np.linspace(0, 0.9, 10)]))
-    ax = fig.add_subplot(111)
-    labels = []
-    for d in digits:
-        idx = classes == d
-        if Y.shape[1] == 1:
-            ax.plot(Y[idx], np.random.randn(Y[idx].shape[0]), 'o')
-        else:
-            ax.plot(Y[idx, 0], Y[idx, 1], 'o')
-        
-        labels.append(d)
-    ax.legend(labels, numpoints=1, fancybox=True)
-    fig.savefig(name)
-    if Y.shape[1] > 2:
-        print('Warning! Plot shows only first two components!')
+    plt.savefig(filename)
+    print("Example plot saved as tsne_test.png")
 
 
 ################################################################
 
-mnist, classes = get_mnist()
+data = parse_csv("bendall20k-data.csv")
+classes = parse_csv("bendall20k-classes.csv")
 
-if args.n_objects != -1:
-    mnist = mnist[:args.n_objects]
-    classes = classes[:args.n_objects]
+if args.n_obs != -1 and args.n_obs <= len(data):
+    data = data[:args.n_obs]
+    classes = classes[:args.n_obs]
 
-tsne = TSNE(n_jobs=int(args.n_jobs), verbose=1, n_components=args.n_components, random_state=660)
-mnist_tsne = tsne.fit_transform(mnist)
+print("Available CPU cores detected: " + str(multiprocessing.cpu_count()))
 
-filename = 'mnist_tsne_n_comp=%d.png' % args.n_components
-plot(mnist_tsne, classes, filename)
-print('Plot saved to %s' % filename)
+tsne = TSNE(n_jobs=int(args.n_threads), verbose=3, random_state=2, auto_iter=True, learning_rate=len(data)/12, auto_iter_end=1000)
+tsne_result = tsne.fit_transform(data)
+
+plot(tsne_result, classes)
