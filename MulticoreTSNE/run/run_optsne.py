@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import multiprocessing
 
 import argparse
+
+default_result_path = "tsne_results.csv"
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--data", help='Path to data file')
 parser.add_argument("--n_threads", help='Number of threads', default=1, type=int)
@@ -19,6 +22,7 @@ parser.add_argument("--early_exaggeration", help='Early exaggeration factor', de
 parser.add_argument("--n_obs", help='How many observations (datapoints) to use', default=-1, type=int)
 parser.add_argument("--seed", help='Random seed for t-SNE', default=42, type=int)
 parser.add_argument("--verbose", help='Print progress every N iterations', default=25, type=int)
+parser.add_argument("--outfile", help='Relative or absolute filepath at which to save results CSV', default=default_result_path)
 args = parser.parse_args()
 
 def parse_csv(filepath):
@@ -56,7 +60,12 @@ tsne = TSNE(n_jobs=int(args.n_threads),
 if args.verbose:
     print("Available CPU cores detected: " + str(multiprocessing.cpu_count()))
 tsne_result = tsne.fit_transform(data)
-result_file = "tsne_results.csv"
-np.savetxt(result_file, tsne_result, delimiter=",")
-if args.verbose:
-    print("Results saved as " + result_file)
+try:
+    np.savetxt(args.outfile, tsne_result, delimiter=",")
+    if args.verbose:
+        print("Results saved as " + args.outfile)
+except:
+    print "can't write to " + args.outfile + ". Is path valid?"
+    np.savetxt(default_result_path, tsne_result, delimiter=",")
+    if args.verbose:
+        print("Results saved as " + default_result_path)

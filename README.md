@@ -78,6 +78,7 @@ Add these flags followed directly by values to run_optsne.py to modify algorithm
 - `--n_obs` is the number of observations (datapoints) to use from the data file if not the whole set.
 - `--seed` is the pseudorandom seed value in order to control consistency of results between runs as desired.
 - `--verbose` is the frequency in iterations to print algorithm progress. Pass 0 to have no printed output, 1 for every iteration, 25 for every 25 iterations, etc.
+- `--outfile` is the relative or absolute filepath at which to save the t-SNE results for this run as CSV.
 
 ### Private Arguments
 There are also a number of tuneable parameters that are currently hard-coded. Their values can be edited with the **tsne.cpp** file. They will take effect after reinstalling the package following the edits.
