@@ -1,26 +1,33 @@
 # opt-SNE
-opt-SNE is a variant of t-SNE designed to produce high-quality embeddings in the optimal amount of compute time without having to empirically tune algorithm parameters. For thorough background and discussion on this work, please read [the paper](https://doi.org/10.1101/451690).
+opt-SNE is a modified version of t-SNE that enables high-quality embeddings in the optimal amount of compute time without having to empirically tune algorithm parameters. For thorough background and discussion on this work, please read [the paper](https://doi.org/10.1101/451690).
 
-This repository contains a c++ implementation with a Python wrapper.
+This repository contains a C++ implementation with a Python wrapper.
 
 Need help getting this code running? [Contact Omiq](https://omiq.ai/#contact).
 
 # What is the Benefit?
-We generally realize a 2-5x decrease in time to result using this methodology, and can analyze datasets with numbers of observations that were previously prohibitively large. There is also the added benefit and time savings of getting the result right the first time, thus preventing the scenario of having to do additional runs to get the settings correct if the initial run failed to produce a good embedding.
+We generally observe these benefits using the opt-SNE methodology compared to previously conventional strategies for running t-SNE:
+- High-quality embeddings ~2-5x faster
+- Reliable embedding of datasets with numbers of observations that were previously prohibitively large (see the paper for examples of embedding with 5.2 * 10^6 and 2 * 10^7 datapoints)
+- Improved local structure resolution
+- Avoiding the expensive scenario of having to do multiple runs to optimize settings if the initial run failed to produce a good embedding
 
-Its benefit is seen especially with larger datasets that often produce inaccurate embeddings and/or take excessive amounts of time to compute, especially when empirically searching the parameter space. However, t-SNE runs of all sizes can benefit from completing sooner using this methodology.
+<p align="center">
+  <img src="tsnevsoptsne.png"><br>
+  <em>20 million datapoint embedding. Left: conventional t-SNE approach. Right: opt-SNE.</em>
+</p>
 
 # How Does opt-SNE Work?
 opt-SNE automates the selection of three important parameters for the t-SNE run:
-1) learning rate
+1) initial learning rate
 2) number of iterations spent in early exaggeration
 3) number of total iterations.
 
 Learning rate is calculated before the run begins using a formula. The number of iterations for early exaggeration and the run itself are determined in real time as the run progresses by monitoring the Kullback-Leibler divergence (KLD). More details are given directly below.
 
 The algorithm works in this fashion:
-- First calculate the optimal learning rate based on the number of observations (aka "cells", "samples") in the dataset. The value is given by the number of observations divided by the early exaggeration factor, which in most implementations is 12 by default. It may be exposed as an argument, such as in this package with the `early_exaggeration` argument.
-- As the run progresses the Kullback-Leibler divergence (KLD) is monitored. The difference and rate of change percentage are calculated for readings between iterations.
+- First calculate the optimal initial learning rate (aka "eta") based on the number of observations (aka "cells", "samples", "rows") in the dataset. The value is given by the number of observations divided by the early exaggeration factor, which in most implementations is 12 by default. It may be exposed as an argument, such as in this package with the `early_exaggeration` argument.
+- As the run progresses the Kullback-Leibler divergence (KLD) is monitored. The difference and rate of change are calculated for readings between iterations.
 - By monitoring KLD rate of change (KLDRC), a local maximum can be detected. When this maximum is reached, the run switches out of early exaggeration.
 - After early exaggeration the KLD difference is used to stop the run. This happens when the difference from one iteration to the next is less than the current KLD divided by a constant which can be overridden by the user. The larger this constant is, the longer the run will go before stopping.
 
@@ -81,7 +88,7 @@ There are also a number of tuneable parameters that are currently hard-coded. Th
 - `auto_iter_ee_switch_buffer` is the number of iterations times the `auto_iter_pollrate_ee` to wait after detecting KLDRC switchpoint to actually make the switch out of EE.
 
 # Does opt-SNE Work for My Data?
-This methodology is general and should work broadly, however, it has been most closely characterized with single-cell data types such as flow cytometry, mass cytometry, and scRNA-seq.
+This methodology is general and should work broadly, however, it has been most closely characterized with single-cell data types such as flow cytometry, mass cytometry, and scRNA-seq. It has also been tested on MNIST 70000x784.
 
 # Code Origination and Discussion
 This package is forked from Dmitry Ulyanov's [Multicore t-SNE](https://github.com/DmitryUlyanov/Multicore-TSNE) which itself is a multicore modification of [Barnes-Hut t-SNE](https://github.com/lvdmaaten/bhtsne) by L. Van der Maaten.
@@ -101,7 +108,10 @@ Inherited from [original repo's license](https://github.com/lvdmaaten/bhtsne).
 - It could make sense to take a more functional approach to the criteria for early exaggeration switch and stopping the run in case different logic is desired without having to fork new versions of this package.
 
 # Citation
-For the opt-SNE methodology, refer to [the opt-SNE paper](https://doi.org/10.1101/451690).
+If you use the opt-SNE methodology, please cite the [preprint](https://doi.org/10.1101/451690):
+
+Anna C. Belkina, Christopher O. Ciccolella, Rina Anno, Josef Spidlen, Richard Halpert, Jennifer Snyder-Cappione. **Automated optimal parameters for T-distributed stochastic neighbor embedding improve visualization and allow analysis of large datasets (2018)** bioRxiv 451690; 
+**doi**: https://doi.org/10.1101/451690
 
 For Multicore-TSNE:
 ```
