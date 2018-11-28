@@ -3,7 +3,7 @@ opt-SNE is a modified version of t-SNE that enables high-quality embeddings in t
 
 This repository contains a C++ implementation with a Python wrapper.
 
-Need help getting this code running? [Contact Omiq](https://omiq.ai/#contact).
+For help getting this code working, to sign up for the cloud version, or to download data featured in the paper, [visit Omiq's opt-SNE resources page](https://omiq.ai/opt-SNE).
 
 # What is the Benefit?
 We generally observe these benefits using the opt-SNE methodology compared to previously conventional strategies for running t-SNE:
@@ -92,7 +92,7 @@ There are also a number of tuneable parameters that are currently hard-coded. Th
 This methodology is general and should work broadly, however, it has been most closely characterized with single-cell data types such as flow cytometry, mass cytometry, and scRNA-seq. It has also been tested on MNIST 70000x784.
 
 # Code Origination and Discussion
-This package is forked from Dmitry Ulyanov's [Multicore t-SNE](https://github.com/DmitryUlyanov/Multicore-TSNE) which itself is a multicore modification of [Barnes-Hut t-SNE](https://github.com/lvdmaaten/bhtsne) by L. Van der Maaten.
+This package is forked from Dmitry Ulyanov's [Multicore t-SNE](https://github.com/DmitryUlyanov/Multicore-TSNE) which itself is a multicore modification of [Barnes-Hut t-SNE](https://github.com/lvdmaaten/bhtsne) by Laurens van der Maaten.
 
 Multicore t-SNE was chosen as the base for this package due to its speed. See the original repository for information on benchmarks.
 
@@ -126,4 +126,4 @@ For Multicore-TSNE:
 }
 ```
 
-Of course, do not forget to cite [L. Van der Maaten's paper](http://lvdmaaten.github.io/publications/papers/JMLR_2014.pdf)
+Of course, do not forget to cite [Laurens van der Maaten's paper](http://lvdmaaten.github.io/publications/papers/JMLR_2014.pdf)
