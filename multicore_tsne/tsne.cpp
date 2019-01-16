@@ -157,7 +157,7 @@ void TSNE<treeT, dist_fn>::run(double* X, int N, int D, double* Y,
     // Perform main training loop
     start = time(0);
     start_incr = time(0);
-    double error_prev = MAXFLOAT; // to store previous iteration error value in auto_iter mode
+    double error_prev = FLT_MAX; // to store previous iteration error value in auto_iter mode
     double error_rc_prev; // to store previous iteration's error rate of change in auto_iter mode
     int auto_iter_buffer_ee = 15;  // number of iters to wait before starting to monitor KLDRC for stopping EE
     int auto_iter_buffer_run = 15; // number of iters to wait before starting to monitor KLDRC for stopping run
