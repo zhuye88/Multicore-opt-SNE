@@ -44,7 +44,7 @@ These directions assume little to no experience with programming or environment/
 - Use Homebrew to install GCC version 8. The command is `brew install gcc@8`.
 - Set the working directory in Terminal to the folder you downloaded locally in the first step. Don't know how to do that? type the letters `cd ` (with a space afterwards) and then drag the folder into the terminal. Its path should appear. Submit the command and then the current directory of Terminal should be set to the correct folder. Typing `pwd` should indicate being inside the directory and `ls` should show the files present inside it.
 - Enter the command `pip2 install matplotlib` to install this dependency that is only necessary for running `test.py` below.
-- Enter the command `pip2 install .` to install this package.
+- Enter the command `pip2 install MulticoreTSNE.` to install this package.
 - Enter the command `python2 MulticoreTSNE/examples/test.py --n_threads 2`
   - After submitting this command, a statement should be printed that indicates how many cores are available on your machine and how many are being used by the algorithm. If the number is not 2, then the installation is not correctly configured for parallel processing. This won't affect results but will affect speed, assuming your computer has more than one CPU core.
 
