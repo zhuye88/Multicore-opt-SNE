@@ -40,7 +40,7 @@ These directions assume little to no experience with programming or environment/
 - Open the Terminal app.
 - Install [Homebrew](https://brew.sh/) using the directions on their website.
 - Use Homebrew to install cmake. The command to enter in Terminal is `brew install cmake`.
-- Use Homebrew to install python 2.x. The command is `brew install python@2`.
+- Use Homebrew to install python 2.x. See https://stackoverflow.com/questions/63844926/mac-install-python3-6-with-brew
 - Use Homebrew to install GCC version 8. The command is `brew install gcc@8`.
 - Set the working directory in Terminal to the folder you downloaded locally in the first step. Don't know how to do that? type the letters `cd ` (with a space afterwards) and then drag the folder into the terminal. Its path should appear. Submit the command and then the current directory of Terminal should be set to the correct folder. Typing `pwd` should indicate being inside the directory and `ls` should show the files present inside it.
 - Enter the command `pip2 install matplotlib` to install this dependency that is only necessary for running `test.py` below.
